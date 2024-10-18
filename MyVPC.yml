@@ -23,3 +23,16 @@ Resources:
       VpcId: !Ref MyVPC
       CidrBlock: '10.0.2.0/24'
       AvailabilityZone: !Select [ 1, !GetAZs '' ]
+  
+  MyInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+        Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyInternetGateway
