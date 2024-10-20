@@ -8,31 +8,35 @@ Resources:
       Tags:
         - Key: Name
           Value: MyVPC
-  
+
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: '10.0.1.0/24'
+      CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true #Receive Public IP address when launched
-      AvailabilityZone: !Select [ 0, !GetAZs '' ]
-  
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: '10.0.2.0/24'
-      AvailabilityZone: !Select [ 1, !GetAZs '' ]
-  
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+
   MyInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
-        Tags:
+      Tags:
         - Key: Name
           Value: MyInternetGateway
 
   AttachGateway:
-    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref MyInternetGateway
@@ -41,14 +45,14 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref MyVPC
-  
+
   PublicRoute:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: '0.0.0.0/0'
+      DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref MyInternetGateway
-  
+
   SubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -57,9 +61,9 @@ Resources:
 
   PublicSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Properties: 
+    Properties:
       VpcId: !Ref MyVPC
-      GroupDescription: "Allow inbound SSH and HTTP traffic for public instance on port 80/443."
+      GroupDescription: Allow inbound SSH and HTTP traffic for public instance on port 80/443.
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -75,13 +79,13 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
-          Value: "PublicSecurityGroup"
-  
+          Value: PublicSecurityGroup
+
   PrivateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref MyVPC
-      GroupDescription: "Allow inbound traffic from public instance" #Update to include 'Jump_box'
+      GroupDescription: Allow inbound traffic from public instance #Update to include 'Jump_box'
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -89,7 +93,7 @@ Resources:
           SourceSecurityGroupId: !Ref PublicSecurityGroup
       Tags:
         - Key: Name
-          Value: "PrivateSecurityGroup"
+          Value: PrivateSecurityGroup
 
   PublicEC2Instance:
     Type: AWS::EC2::Instance
@@ -99,11 +103,11 @@ Resources:
       SecurityGroupIds:
         - !Ref PublicSecurityGroup
       SubnetId: !Ref PublicSubnet
-      ImageId: ami-00385a401487aefa4
+      ImageId: ami-009452531fa1056fa
       Tags:
         - Key: Name
-          Value: "PublicInstance"
-          
+          Value: PublicInstance
+
   PrivateEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
@@ -112,10 +116,10 @@ Resources:
       SecurityGroupIds:
         - !Ref PrivateSecurityGroup
       SubnetId: !Ref PrivateSubnet
-      ImageId: ami-00385a401487aefa4
+      ImageId: ami-009452531fa1056fa
       Tags:
         - Key: Name
-          Value: "PrivateInstance"
+          Value: PrivateInstance
 
   KeyPair:
     Type: AWS::EC2::KeyPair
