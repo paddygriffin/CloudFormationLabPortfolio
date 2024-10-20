@@ -90,3 +90,34 @@ Resources:
       Tags:
         - Key: Name
           Value: "PrivateSecurityGroup"
+
+  PublicEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref PublicSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      ImageId: ami-00385a401487aefa4
+      Tags:
+        - Key: Name
+          Value: "PublicInstance"
+          
+  PrivateEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref PrivateSecurityGroup
+      SubnetId: !Ref PrivateSubnet
+      ImageId: ami-00385a401487aefa4
+      Tags:
+        - Key: Name
+          Value: "PrivateInstance"
+
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: MyKeyPairLab
