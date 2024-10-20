@@ -91,6 +91,10 @@ Resources:
           FromPort: 22
           ToPort: 22
           SourceSecurityGroupId: !Ref PublicSecurityGroup
+        - IpProtocol: icmp
+          FromPort: -1   # -1 for all ICMP types (Echo Request and Echo Reply)
+          ToPort: -1     # -1 for all ICMP codes
+          SourceSecurityGroupId: !Ref PublicSecurityGroup   # Allow ICMP from the public instance
       Tags:
         - Key: Name
           Value: PrivateSecurityGroup
