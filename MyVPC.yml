@@ -1,3 +1,8 @@
+Parameters:
+  KeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: String
+
 Resources:
   MyVPC:
     Type: AWS::EC2::VPC
@@ -92,9 +97,9 @@ Resources:
           ToPort: 22
           SourceSecurityGroupId: !Ref PublicSecurityGroup
         - IpProtocol: icmp
-          FromPort: -1   # -1 for all ICMP types (Echo Request and Echo Reply)
-          ToPort: -1     # -1 for all ICMP codes
-          SourceSecurityGroupId: !Ref PublicSecurityGroup   # Allow ICMP from the public instance
+          FromPort: -1 # -1 for all ICMP types (Echo Request and Echo Reply)
+          ToPort: -1 # -1 for all ICMP codes
+          SourceSecurityGroupId: !Ref PublicSecurityGroup # Allow ICMP from the public instance
       Tags:
         - Key: Name
           Value: PrivateSecurityGroup
@@ -107,7 +112,7 @@ Resources:
       SecurityGroupIds:
         - !Ref PublicSecurityGroup
       SubnetId: !Ref PublicSubnet
-      ImageId: ami-009452531fa1056fa
+      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PublicInstance
@@ -120,12 +125,7 @@ Resources:
       SecurityGroupIds:
         - !Ref PrivateSecurityGroup
       SubnetId: !Ref PrivateSubnet
-      ImageId: ami-009452531fa1056fa
+      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PrivateInstance
-
-  KeyPair:
-    Type: AWS::EC2::KeyPair
-    Properties:
-      KeyName: MyKeyPairLab
