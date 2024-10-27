@@ -23,6 +23,9 @@ Resources:
       AvailabilityZone: !Select
         - 0
         - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet
 
   PrivateSubnet:
     Type: AWS::EC2::Subnet
@@ -32,6 +35,9 @@ Resources:
       AvailabilityZone: !Select
         - 1
         - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Private Subnet
 
   MyInternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -95,14 +101,28 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SourceSecurityGroupId: !Ref PublicSecurityGroup
+          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup
         - IpProtocol: icmp
           FromPort: -1 # -1 for all ICMP types (Echo Request and Echo Reply)
           ToPort: -1 # -1 for all ICMP codes
-          SourceSecurityGroupId: !Ref PublicSecurityGroup # Allow ICMP from the public instance
+          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup # Allow ICMP from the public instance
       Tags:
         - Key: Name
           Value: PrivateSecurityGroup
+
+  JumpBoxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow ssh access to jumpbox
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Jumpbox
 
   PublicEC2Instance:
     Type: AWS::EC2::Instance
@@ -112,7 +132,7 @@ Resources:
       SecurityGroupIds:
         - !Ref PublicSecurityGroup
       SubnetId: !Ref PublicSubnet
-      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
+      ImageId: ami-00385a401487aefa4 #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PublicInstance
@@ -125,7 +145,20 @@ Resources:
       SecurityGroupIds:
         - !Ref PrivateSecurityGroup
       SubnetId: !Ref PrivateSubnet
-      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
+      ImageId: ami-00385a401487aefa4 #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PrivateInstance
+
+  JumpBox:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref JumpBoxSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      ImageId: ami-00385a401487aefa4 #ami-009452531fa1056fa
+      Tags:
+        - Key: Name
+          Value: JumpBox
