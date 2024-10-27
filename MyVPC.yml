@@ -1,13 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Reusable VPC with public and private subnets, EC2 instances, security groups, and jump box for accessing priv instance"
+
 Parameters:
   KeyPair:
     Description: Name of an existing EC2 KeyPair to enable SSH access
     Type: String
 
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the public subnet
+
+  PrivateSubnetCIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for the private subnet
+Mappings:
+  AMIIDMap:
+    us-east-1:
+      MyAMI1: ami-06b21ccaeff8cd686
+      #MyAMI2: ami-0a584ac55a7631c0c
+    us-west-1:
+      MyAMI1: ami-0cf4e1fcfd8494d5
+      #MyAMI2: ami-066ee5fd4a9ef77f1
+    eu-west-1:
+      MyAMI1: ami-00385a401487aefa4
+    # MyAMI2: ami-0a7c483d527806435
+
 Resources:
   MyVPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/16
+      CidrBlock: !Ref VpcCIDR
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
@@ -18,20 +47,26 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: 10.0.1.0/24
+      CidrBlock: !Ref PublicSubnetCIDR
       MapPublicIpOnLaunch: true #Receive Public IP address when launched
       AvailabilityZone: !Select
         - 0
         - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet
 
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: 10.0.2.0/24
+      CidrBlock: !Ref PrivateSubnetCIDR
       AvailabilityZone: !Select
         - 1
         - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Private Subnet
 
   MyInternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -95,14 +130,28 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SourceSecurityGroupId: !Ref PublicSecurityGroup
+          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup
         - IpProtocol: icmp
           FromPort: -1 # -1 for all ICMP types (Echo Request and Echo Reply)
           ToPort: -1 # -1 for all ICMP codes
-          SourceSecurityGroupId: !Ref PublicSecurityGroup # Allow ICMP from the public instance
+          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup # Allow ICMP from the public instance
       Tags:
         - Key: Name
           Value: PrivateSecurityGroup
+
+  JumpBoxSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow ssh access to jumpbox
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Jumpbox
 
   PublicEC2Instance:
     Type: AWS::EC2::Instance
@@ -112,7 +161,11 @@ Resources:
       SecurityGroupIds:
         - !Ref PublicSecurityGroup
       SubnetId: !Ref PublicSubnet
-      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
+      ImageId: !FindInMap
+        - AMIIDMap
+        - !Ref AWS::Region
+        - MyAMI1
+        #ami-00385a401487aefa4 #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PublicInstance
@@ -125,7 +178,28 @@ Resources:
       SecurityGroupIds:
         - !Ref PrivateSecurityGroup
       SubnetId: !Ref PrivateSubnet
-      ImageId: ami-054a53dca63de757b #ami-009452531fa1056fa
+      ImageId: !FindInMap
+        - AMIIDMap
+        - !Ref AWS::Region
+        - MyAMI1
+        #ami-009452531fa1056fa
       Tags:
         - Key: Name
           Value: PrivateInstance
+
+  JumpBox:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref JumpBoxSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      ImageId: !FindInMap
+        - AMIIDMap
+        - !Ref AWS::Region
+        - MyAMI1
+        #ami-009452531fa1056fa
+      Tags:
+        - Key: Name
+          Value: JumpBox
