@@ -1,37 +1,54 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Reusable VPC with public and private subnets, EC2 instances, security groups, and jump box for accessing priv instance"
+Description: "Multi-AZ VPC with public and private subnets, NAT gateways, EC2 instances, security groups, and a jump box"
 
+# Deployment inputs and network address ranges.
 Parameters:
   KeyPair:
     Description: Name of an existing EC2 KeyPair to enable SSH access
     Type: String
+
+  AdminCidr:
+    Description: CIDR block allowed to SSH to public instances and the jump box
+    Type: String
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])/(3[0-2]|[1-2]?[0-9])$
+    ConstraintDescription: Must be a valid IPv4 CIDR block, for example 198.51.100.10/32
 
   VpcCIDR:
     Type: String
     Default: 10.0.0.0/16
     Description: CIDR block for the VPC
 
-  PublicSubnetCIDR:
+  PublicSubnetACIDR:
     Type: String
     Default: 10.0.1.0/24
-    Description: CIDR block for the public subnet
+    Description: CIDR block for the first public subnet
 
-  PrivateSubnetCIDR:
+  PublicSubnetBCIDR:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR block for the second public subnet
+
+  PrivateSubnetACIDR:
     Type: String
     Default: 10.0.2.0/24
-    Description: CIDR block for the private subnet
-Mappings:
-  AMIIDMap:
-    us-east-1:
-      MyAMI1: ami-06b21ccaeff8cd686
-      #MyAMI2: ami-0a584ac55a7631c0c
-    us-west-1:
-      MyAMI1: ami-0cf4e1fcfd8494d5
-      #MyAMI2: ami-066ee5fd4a9ef77f1
-    eu-west-1:
-      MyAMI1: ami-00385a401487aefa4
-    # MyAMI2: ami-0a7c483d527806435
+    Description: CIDR block for the first private subnet
 
+  PrivateSubnetBCIDR:
+    Type: String
+    Default: 10.0.4.0/24
+    Description: CIDR block for the second private subnet
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: SSM parameter for the latest Amazon Linux 2023 AMI
+
+  ProjectName:
+    Type: String
+    Default: CloudFormationLab
+    Description: Value used for the Project resource tag
+
+# Core VPC and subnet layout. Public and private subnets are paired by AZ.
 Resources:
   MyVPC:
     Type: AWS::EC2::VPC
@@ -42,38 +59,76 @@ Resources:
       Tags:
         - Key: Name
           Value: MyVPC
+        - Key: Project
+          Value: !Ref ProjectName
 
-  PublicSubnet:
+  PublicSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: !Ref PublicSubnetCIDR
-      MapPublicIpOnLaunch: true #Receive Public IP address when launched
+      CidrBlock: !Ref PublicSubnetACIDR
+      MapPublicIpOnLaunch: true
       AvailabilityZone: !Select
         - 0
         - !GetAZs ''
       Tags:
         - Key: Name
-          Value: Public Subnet
+          Value: Public Subnet A
+        - Key: Project
+          Value: !Ref ProjectName
 
-  PrivateSubnet:
+  PublicSubnetB:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
-      CidrBlock: !Ref PrivateSubnetCIDR
+      CidrBlock: !Ref PublicSubnetBCIDR
+      MapPublicIpOnLaunch: true
       AvailabilityZone: !Select
         - 1
         - !GetAZs ''
       Tags:
         - Key: Name
-          Value: Private Subnet
+          Value: Public Subnet B
+        - Key: Project
+          Value: !Ref ProjectName
 
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetACIDR
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Private Subnet A
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PrivateSubnetBCIDR
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Private Subnet B
+        - Key: Project
+          Value: !Ref ProjectName
+
+      # Internet Gateway provides direct internet connectivity for public subnets.
   MyInternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
           Value: MyInternetGateway
+        - Key: Project
+          Value: !Ref ProjectName
 
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -81,34 +136,139 @@ Resources:
       VpcId: !Ref MyVPC
       InternetGatewayId: !Ref MyInternetGateway
 
+    # Public routing sends internet-bound traffic to the Internet Gateway.
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: Public Routes
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PublicRouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicRouteTableAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
 
   PublicRoute:
     Type: AWS::EC2::Route
+    DependsOn: AttachGateway
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref MyInternetGateway
 
-  SubnetRouteTableAssociation:
+    # Each NAT Gateway has a public Elastic IP and provides resilient private egress.
+  NatGatewayEipA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: NAT Gateway EIP A
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NatGatewayEipB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: NAT Gateway EIP B
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEipA.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: NAT Gateway A
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NatGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEipB.AllocationId
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: NAT Gateway B
+        - Key: Project
+          Value: !Ref ProjectName
+
+      # Private routing keeps instances unreachable from the internet while allowing
+      # outbound connections through the NAT Gateway in the same Availability Zone.
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: Private Routes A
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: Private Routes B
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+
+  PrivateRouteTableAssociationA:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PrivateRouteTableA
+      SubnetId: !Ref PrivateSubnetA
 
+  PrivateRouteTableAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      SubnetId: !Ref PrivateSubnetB
+
+    # Security groups define the permitted administration and application traffic.
   PublicSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref MyVPC
-      GroupDescription: Allow inbound SSH and HTTP traffic for public instance on port 80/443.
+      GroupDescription: Allow administrator SSH and public HTTP/HTTPS traffic.
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref AdminCidr
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
@@ -120,86 +280,117 @@ Resources:
       Tags:
         - Key: Name
           Value: PublicSecurityGroup
+        - Key: Project
+          Value: !Ref ProjectName
 
   PrivateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref MyVPC
-      GroupDescription: Allow inbound traffic from public instance #Update to include 'Jump_box'
+      GroupDescription: Allow SSH and ICMP from the jump box.
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
           SourceSecurityGroupId: !Ref JumpBoxSecurityGroup
         - IpProtocol: icmp
-          FromPort: -1 # -1 for all ICMP types (Echo Request and Echo Reply)
-          ToPort: -1 # -1 for all ICMP codes
-          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup # Allow ICMP from the public instance
+          FromPort: -1
+          ToPort: -1
+          SourceSecurityGroupId: !Ref JumpBoxSecurityGroup
       Tags:
         - Key: Name
           Value: PrivateSecurityGroup
+        - Key: Project
+          Value: !Ref ProjectName
 
   JumpBoxSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: allow ssh access to jumpbox
+      GroupDescription: Allow administrator SSH access to the jump box.
       VpcId: !Ref MyVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref AdminCidr
       Tags:
         - Key: Name
           Value: Jumpbox
+        - Key: Project
+          Value: !Ref ProjectName
 
+      # Lab instances demonstrate public access, jump-box administration, and private hosting.
   PublicEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       KeyName: !Ref KeyPair
       SecurityGroupIds:
         - !Ref PublicSecurityGroup
-      SubnetId: !Ref PublicSubnet
-      ImageId: !FindInMap
-        - AMIIDMap
-        - !Ref AWS::Region
-        - MyAMI1
-        #ami-00385a401487aefa4 #ami-009452531fa1056fa
+      SubnetId: !Ref PublicSubnetA
+      ImageId: !Ref LatestAmiId
       Tags:
         - Key: Name
           Value: PublicInstance
+        - Key: Project
+          Value: !Ref ProjectName
 
   PrivateEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       KeyName: !Ref KeyPair
       SecurityGroupIds:
         - !Ref PrivateSecurityGroup
-      SubnetId: !Ref PrivateSubnet
-      ImageId: !FindInMap
-        - AMIIDMap
-        - !Ref AWS::Region
-        - MyAMI1
-        #ami-009452531fa1056fa
+      SubnetId: !Ref PrivateSubnetA
+      ImageId: !Ref LatestAmiId
       Tags:
         - Key: Name
           Value: PrivateInstance
+        - Key: Project
+          Value: !Ref ProjectName
 
   JumpBox:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       KeyName: !Ref KeyPair
       SecurityGroupIds:
         - !Ref JumpBoxSecurityGroup
-      SubnetId: !Ref PublicSubnet
-      ImageId: !FindInMap
-        - AMIIDMap
-        - !Ref AWS::Region
-        - MyAMI1
-        #ami-009452531fa1056fa
+      SubnetId: !Ref PublicSubnetA
+      ImageId: !Ref LatestAmiId
       Tags:
         - Key: Name
           Value: JumpBox
+        - Key: Project
+          Value: !Ref ProjectName
+
+# Values exported by the stack for testing and for use by other stacks.
+Outputs:
+  VpcId:
+    Description: ID of the VPC
+    Value: !Ref MyVPC
+
+  PublicSubnetAId:
+    Description: ID of public subnet A
+    Value: !Ref PublicSubnetA
+
+  PublicSubnetBId:
+    Description: ID of public subnet B
+    Value: !Ref PublicSubnetB
+
+  PrivateSubnetAId:
+    Description: ID of private subnet A
+    Value: !Ref PrivateSubnetA
+
+  PrivateSubnetBId:
+    Description: ID of private subnet B
+    Value: !Ref PrivateSubnetB
+
+  JumpBoxPublicIp:
+    Description: Public IP address of the jump box
+    Value: !GetAtt JumpBox.PublicIp
+
+  PrivateInstanceId:
+    Description: ID of the private EC2 instance
+    Value: !Ref PrivateEC2Instance
